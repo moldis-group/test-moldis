@@ -1,0 +1,3 @@
+molecule	xyzfile	energy	dipolemoment
+water	mol01.xyz	-0.43	1.0
+ammonia	mol02.xyz	-0.65	2.0

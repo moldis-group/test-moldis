@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Molecule browser</title>
+  <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
+  <style>
+    body { font: 16px system-ui, sans-serif; margin: 2rem; }
+    main { display: grid; grid-template-columns: 220px 1fr; gap: 2rem; }
+    #list { height: 450px; overflow-y: auto; border: 1px solid #ccc; }
+    #list button { display: block; width: 100%; padding: .7rem; border: 0;
+                   background: white; text-align: left; cursor: pointer; }
+    #list button:hover, #list button.selected { background: #e8f0ff; }
+    #viewer { height: 400px; position: relative; border: 1px solid #ccc; }
+    @media (max-width: 650px) {
+      main { grid-template-columns: 1fr; }
+      #list { height: 180px; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Molecule browser</h1>
+  <input id="search" type="search" placeholder="Search molecules or filenames">
+  <main>
+    <div id="list" aria-label="Molecules"></div>
+    <section>
+      <h2 id="name">Select a molecule</h2>
+      <p id="properties"></p>
+      <div id="viewer"></div>
+      <p id="status"></p>
+    </section>
+  </main>
+
+  <script>
+    const list = document.querySelector("#list");
+    const search = document.querySelector("#search");
+    const viewer = $3Dmol.createViewer("viewer", { backgroundColor: "white" });
+    let molecules = [];
+
+    function drawList() {
+      const query = search.value.toLowerCase();
+      list.replaceChildren();
+
+      for (const mol of molecules.filter(m =>
+        `${m.molecule} ${m.xyzfile}`.toLowerCase().includes(query)
+      )) {
+        const button = document.createElement("button");
+        button.textContent = `${mol.molecule} — ${mol.xyzfile}`;
+        button.onclick = () => showMolecule(mol, button);
+        list.append(button);
+      }
+    }
+
+    async function showMolecule(mol, button) {
+      document.querySelectorAll("#list button").forEach(b =>
+        b.classList.toggle("selected", b === button)
+      );
+      document.querySelector("#name").textContent = mol.molecule;
+      document.querySelector("#properties").textContent =
+        `File: ${mol.xyzfile} | Energy: ${mol.energy} | ` +
+        `Dipole moment: ${mol.dipolemoment}`;
+      document.querySelector("#status").textContent = "Loading structure…";
+
+      try {
+        // Filenames in the TSV should be simple names, such as mol01.xyz.
+        if (!/^[\w.-]+\.xyz$/.test(mol.xyzfile)) {
+          throw new Error("Invalid XYZ filename");
+        }
+        const response = await fetch(`xyz/${mol.xyzfile}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        viewer.clear();
+        viewer.addModel(await response.text(), "xyz");
+        viewer.setStyle({}, { stick: {}, sphere: { scale: 0.3 } });
+        viewer.zoomTo();
+        viewer.render();
+        document.querySelector("#status").textContent = "";
+      } catch (error) {
+        viewer.clear();
+        viewer.render();
+        document.querySelector("#status").textContent =
+          `Could not load ${mol.xyzfile}: ${error.message}`;
+      }
+    }
+
+    async function start() {
+      try {
+        const response = await fetch("molecules.tsv");
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const lines = (await response.text()).trim().split(/\r?\n/);
+        const headers = lines.shift().split("\t");
+        molecules = lines.map(line =>
+          Object.fromEntries(line.split("\t").map((value, i) => [headers[i], value]))
+        );
+        drawList();
+        if (molecules.length) showMolecule(molecules[0], list.firstElementChild);
+      } catch (error) {
+        document.querySelector("#status").textContent =
+          `Could not read molecules.tsv: ${error.message}`;
+      }
+    }
+
+    search.addEventListener("input", drawList);
+    start();
+  </script>
+</body>
+</html>
